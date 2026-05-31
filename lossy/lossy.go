@@ -83,7 +83,8 @@ type queued struct {
 // held, it is flushed (sent) immediately after the next datagram that is not
 // itself reordered — so the held datagram arrives after that subsequent one.
 // If a second reorder decision arrives while the slot is occupied, the buffered
-// datagram is flushed first so the buffer never grows.
+// datagram is flushed first so the buffer never grows. Close also flushes the
+// slot, so no datagram is ever silently lost due to reordering.
 //
 // # Delay and deadlines
 //
@@ -221,8 +222,22 @@ func (c *Channel) ReadFrom(p []byte) (int, net.Addr, error) {
 	return c.conn.ReadFrom(p)
 }
 
-// Close closes the underlying conn.
+// Close flushes any datagram still sitting in the reorder buffer, then closes
+// the underlying conn. Without this flush a held datagram would be silently
+// lost if no subsequent WriteTo ever arrives — corrupting the effective drop
+// rate in the assignee's tests (the datagram would disappear beyond the
+// configured DropRate, making loss accounting wrong).
 func (c *Channel) Close() error {
+	c.mu.Lock()
+	held := c.held
+	c.held = nil
+	c.mu.Unlock()
+
+	if held != nil {
+		c.conn.WriteTo(held.p, held.addr) //nolint:errcheck
+		c.log(Event{Kind: EventSent, Len: len(held.p), Addr: held.addr})
+	}
+
 	return c.conn.Close()
 }
 

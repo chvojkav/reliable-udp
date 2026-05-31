@@ -196,6 +196,39 @@ func TestLogHook(t *testing.T) {
 	}
 }
 
+// TestCloseFlushesHeldDatagram verifies that Close flushes a datagram that is
+// sitting in the reorder buffer and would otherwise be silently lost. Without
+// this flush the effective drop rate would exceed DropRate, corrupting loss
+// accounting in the assignee's tests.
+func TestCloseFlushesHeldDatagram(t *testing.T) {
+	sender, receiver := udpPair(t)
+
+	// ReorderRate=1.0: the first WriteTo holds the datagram, nothing is sent.
+	ch := lossy.New(sender, lossy.Config{ReorderRate: 1.0, Seed: 1})
+
+	if _, err := ch.WriteTo([]byte("flush-me"), receiver.LocalAddr()); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+
+	// Nothing should have arrived yet — datagram is held.
+	if got := readOne(receiver, 20*time.Millisecond); got != nil {
+		t.Fatalf("expected datagram to be held before Close, got %q", got)
+	}
+
+	// Close must flush the held datagram to the underlying conn.
+	if err := ch.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	got := readOne(receiver, 200*time.Millisecond)
+	if got == nil {
+		t.Fatal("held datagram was not flushed by Close")
+	}
+	if string(got) != "flush-me" {
+		t.Errorf("got %q, want %q", got, "flush-me")
+	}
+}
+
 // TestReorderActuallyReorders sends two datagrams where the first is always
 // reordered (ReorderRate=1) and the second is not, then checks that the
 // first datagram arrives after the second.
