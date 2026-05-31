@@ -39,6 +39,12 @@ import (
 // this to a prefixed logger before calling any factory; the transport writes
 // sequence numbers, ACKs, retransmissions, etc. through it. The stub ignores
 // it.
+//
+// Set Logger ONCE, before calling any factory. Do not reassign after a
+// connection is live: if your factory spins up goroutines that read Logger
+// concurrently with a reassignment in another goroutine, that is a data race.
+// See docs/CONTEXT.md for why this simplification is intentional here and
+// should not be inherited by the future message-oriented layer.
 var Logger = log.Default()
 
 // Client is the ClientFactory used by cmd/client.
