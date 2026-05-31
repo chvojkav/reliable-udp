@@ -98,6 +98,26 @@ type queued struct {
 // Background goroutines spawned for delayed sends may outlive Close; they will
 // attempt to write to a closed conn and produce an ignored error.
 //
+// # Determinism and the Seed field
+//
+// The sequence of impairment DECISIONS (which datagrams are dropped, duped,
+// reordered, or delayed) is fully deterministic under a fixed Seed: all RNG
+// calls happen under the mutex in the same order on every run with the same
+// sequence of WriteTo calls.
+//
+// The real-time DELIVERY ORDER of delayed datagrams is NOT deterministic, even
+// with a fixed Seed. When Delay > 0, each delayed send runs in its own
+// goroutine; the OS scheduler can interleave them arbitrarily, so two runs
+// with the same seed may deliver datagrams in different wall-clock order.
+// ReorderRate+Delay combinations are therefore not reliably reproducible at
+// the delivery level.
+//
+// A SynchronousDelay option (serialising delayed sends through an ordered
+// queue) would make delivery order deterministic, but requires ~40 lines of
+// race-safe channel/goroutine coordination and is deferred. For tests that
+// need strict delivery reproducibility, set Delay=0 and DelayJitter=0 and
+// rely on ReorderRate alone for out-of-order scenarios.
+//
 // # Concurrency
 //
 // WriteTo is safe to call from multiple goroutines. RNG decisions and the
