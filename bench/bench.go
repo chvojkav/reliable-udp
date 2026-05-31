@@ -231,7 +231,13 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 				lat := time.Since(t0)
 
 				if err != nil {
-					// Ignore errors caused by context cancellation at run end.
+					// Only count errors that occurred before the run ended.
+					// If runCtx is already cancelled the request was torn down
+					// by deadline/quota, not by a transport fault.
+					// Known bias: a genuine transport error that coincides
+					// exactly with the deadline is discarded here — this can
+					// only under-report errors near end-of-duration, never
+					// over-report or miscount successes mid-run.
 					if runCtx.Err() == nil {
 						wr.errors++
 					}
