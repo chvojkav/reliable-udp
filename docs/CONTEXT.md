@@ -5,6 +5,17 @@ deliberately left undone. Not assignee-facing (though harmless if read).
 
 ---
 
+## Known simplifications not to inherit
+
+`transport.Logger` is a package-level mutable `*log.Logger` — a deliberate simplification for the
+single-connection exercise. It must be set once, before calling any factory. The future
+message-oriented layer should NOT blindly inherit this pattern: a shared mutable global is a data
+race if the transport spawns goroutines that read `Logger` while another goroutine reassigns it.
+The right model for that layer is a per-connection logger threaded through the factory signature or
+a `context.Context` value.
+
+---
+
 ## Why the design is shaped this way
 
 The whole structure exists to make **one piece of assignee code run unchanged in three contexts**:
